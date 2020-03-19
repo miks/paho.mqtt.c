@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2009, 2018 IBM Corp.
+ * Copyright (c) 2009, 2020 IBM Corp.
  *
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License v1.0
@@ -154,14 +154,18 @@ void MyLog(int LOGA_level, char* format, ...)
 	va_list args;
 	struct timeb ts;
 
-	struct tm *timeinfo;
+	struct tm timeinfo;
 
 	if (LOGA_level == LOGA_DEBUG && options.verbose == 0)
 	  return;
 
 	ftime(&ts);
-	timeinfo = localtime(&ts.time);
-	strftime(msg_buf, 80, "%Y%m%d %H%M%S", timeinfo);
+#if defined(_WIN32) || defined(_WINDOWS)
+	localtime_s(&timeinfo, &ts.time);
+#else
+	localtime_r(&ts.time, &timeinfo);
+#endif
+	strftime(msg_buf, 80, "%Y%m%d %H%M%S", &timeinfo);
 
 	sprintf(&msg_buf[strlen(msg_buf)], ".%.3hu ", ts.millitm);
 

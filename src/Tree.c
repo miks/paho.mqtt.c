@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2009, 2018 IBM Corp.
+ * Copyright (c) 2009, 2020 IBM Corp.
  *
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License v1.0
@@ -21,7 +21,7 @@
  * Node structure.
  * */
 
-#define NO_HEAP_TRACKING 1
+#define TREE_C /* so that malloc/free/realloc aren't redefined by Heap.h */
 
 #include "Tree.h"
 
@@ -64,12 +64,13 @@ void TreeInitializeNoMalloc(Tree* aTree, int(*compare)(void*, void*, int))
  */
 Tree* TreeInitialize(int(*compare)(void*, void*, int))
 {
-#if defined(UNIT_TESTS)
+#if defined(UNIT_TESTS) || defined(NO_HEAP_TRACKING)
 	Tree* newt = malloc(sizeof(Tree));
 #else
 	Tree* newt = mymalloc(__FILE__, __LINE__, sizeof(Tree));
 #endif
-	TreeInitializeNoMalloc(newt, compare);
+	if (newt)
+		TreeInitializeNoMalloc(newt, compare);
 	return newt;
 }
 
@@ -83,7 +84,7 @@ void TreeAddIndex(Tree* aTree, int(*compare)(void*, void*, int))
 
 void TreeFree(Tree* aTree)
 {
-#if defined(UNIT_TESTS)
+#if defined(UNIT_TESTS) || defined(NO_HEAP_TRACKING)
 	free(aTree);
 #else
 	(aTree->heap_tracking) ? myfree(__FILE__, __LINE__, aTree) : free(aTree);
@@ -235,18 +236,19 @@ void* TreeAddByIndex(Tree* aTree, void* content, size_t size, int index)
 		else
 		{
 			newel = curnode;
-			rc = newel->content;
 			if (index == 0)
 				aTree->size += (size - curnode->size);
 		}
 	}
 	else
 	{
-		#if defined(UNIT_TESTS)
+		#if defined(UNIT_TESTS) || defined(NO_HEAP_TRACKING)
 			newel = malloc(sizeof(Node));
 		#else
 			newel = (aTree->heap_tracking) ? mymalloc(__FILE__, __LINE__, sizeof(Node)) : malloc(sizeof(Node));
 		#endif
+		if (newel == NULL)
+			goto exit;
 		memset(newel, '\0', sizeof(Node));
 		if (curparent)
 			curparent->child[left] = newel;
@@ -262,6 +264,7 @@ void* TreeAddByIndex(Tree* aTree, void* content, size_t size, int index)
 	}
 	newel->content = content;
 	newel->size = size;
+	rc = newel->content;
 	TreeBalanceAfterAdd(aTree, newel, index);
 exit:
 	return rc;
@@ -462,7 +465,7 @@ void* TreeRemoveNodeIndex(Tree* aTree, Node* curnode, int index)
 			TreeBalanceAfterRemove(aTree, curchild, index);
 	}
 
-#if defined(UNIT_TESTS)
+#if defined(UNIT_TESTS) || defined(NO_HEAP_TRACKING)
 	free(redundant);
 #else
 	(aTree->heap_tracking) ? myfree(__FILE__, __LINE__, redundant) : free(redundant);

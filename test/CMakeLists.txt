@@ -7,37 +7,6 @@ SET(MQTT_SSL_HOSTNAME "localhost" CACHE STRING "Hostname of a test SSL MQTT brok
 SET(CERTDIR ${CMAKE_SOURCE_DIR}/test/ssl)
 
 
-IF (PAHO_WITH_SSL)
-	SET(OPENSSL_SEARCH_PATH "" CACHE PATH "Directory containing OpenSSL libraries and includes")
-
-	IF (${CMAKE_SYSTEM_NAME} STREQUAL "Darwin")
-		IF(OPENSSL_SEARCH_PATH STREQUAL "")
-			SET(OPENSSL_SEARCH_PATH "/usr/local/opt/openssl")
-		ENDIF ()	
-	ENDIF (${CMAKE_SYSTEM_NAME} STREQUAL "Darwin")
-
-	IF (WIN32)
-		IF(OPENSSL_SEARCH_PATH STREQUAL "")
-			SET(OPENSSL_SEARCH_PATH "C:/OpenSSL-Win64")
-			IF (DEFINED ENV{PAHO_WINDOWS_BUILD_BIT})
-				IF ($ENV{PAHO_WINDOWS_BUILD_BIT} STREQUAL "x86")
-					SET(OPENSSL_SEARCH_PATH "C:/OpenSSL-Win32")
-				ENDIF ()
-			ENDIF ()
-		ENDIF ()
-	ENDIF ()
-
-	FIND_PATH(OPENSSL_INCLUDE_DIR openssl/ssl.h
-		HINTS ${OPENSSL_SEARCH_PATH}/include)
-
-	MESSAGE(STATUS "OpenSSL hints: ${OPENSSL_SEARCH_PATH}")
-	MESSAGE(STATUS "OpenSSL headers found at ${OPENSSL_INCLUDE_DIR}")
-
-	INCLUDE_DIRECTORIES(
-		${OPENSSL_INCLUDE_DIR}
-	)
-ENDIF ()
-
 IF (WIN32)
 	SET(LIBS_SYSTEM ws2_32)
 ELSEIF (UNIX)
@@ -357,7 +326,7 @@ IF (PAHO_WITH_SSL)
 		)
 		TARGET_LINK_LIBRARIES(
 			test3-static
-			paho-mqtt3cs-static  ${OPENSSL_LIB} ${OPENSSLCRYPTO_LIB}
+			paho-mqtt3cs-static
 		)
 		
 		ADD_TEST(
@@ -384,6 +353,16 @@ IF (PAHO_WITH_SSL)
 			NAME test3-2c-mutual-ssl-client-missing-broker-cert-static
 			COMMAND test3-static "--test_no" "5" "--hostname" ${MQTT_SSL_HOSTNAME} "--client_key"	"${CERTDIR}/client.pem" "--server_key"	"${CERTDIR}/test-root-ca.crt"
 		)
+		
+		ADD_TEST(
+            NAME test3-2e-ssl-with-ha-static
+            COMMAND test3-static "--test_no" "12" "--hostname" ${MQTT_SSL_HOSTNAME} "--client_key"   "${CERTDIR}/client.pem" "--server_key"  "${CERTDIR}/test-root-ca.crt"
+        )
+        
+        ADD_TEST(
+            NAME test3-2e-ws-ssl-with-ha-static
+            COMMAND test3-static "--test_no" "12" "--ws" "--hostname" ${MQTT_SSL_HOSTNAME} "--client_key"   "${CERTDIR}/client.pem" "--server_key"  "${CERTDIR}/test-root-ca.crt"
+        )
 		
 		ADD_TEST(
 			NAME test3-3as-broker-auth-server-cert-in-client-store-single-thread-static
@@ -421,6 +400,8 @@ IF (PAHO_WITH_SSL)
 			test3-2am-mutual-ssl-auth-multi-thread-static
 			test3-2b-mutual-ssl-broker-missing-client-cert-static
 			test3-2c-mutual-ssl-client-missing-broker-cert-static
+			test3-2e-ssl-with-ha-static
+			test3-2e-ws-ssl-with-ha-static
 			test3-3as-broker-auth-server-cert-in-client-store-single-thread-static
 			test3-3am-broker-auth-server-cert-in-client-store-multi-thread-static
 			test3-3b-broker-auth-client-missing-broker-cert-static
@@ -467,6 +448,16 @@ IF (PAHO_WITH_SSL)
 		)
 		
 		ADD_TEST(
+            NAME test3-2e-ssl-with-ha
+            COMMAND test3 "--test_no" "12" "--hostname" ${MQTT_SSL_HOSTNAME} "--client_key"   "${CERTDIR}/client.pem" "--server_key"  "${CERTDIR}/test-root-ca.crt"
+        )
+        
+        ADD_TEST(
+            NAME test3-2e-ws-ssl-with-ha
+            COMMAND test3 "--test_no" "12" "--ws" "--hostname" ${MQTT_SSL_HOSTNAME} "--client_key"   "${CERTDIR}/client.pem" "--server_key"  "${CERTDIR}/test-root-ca.crt"
+        )
+		
+		ADD_TEST(
 			NAME test3-3as-broker-auth-server-cert-in-client-store-single-thread
 			COMMAND test3 "--test_no" "6" "--hostname" ${MQTT_SSL_HOSTNAME} "--client_key"	"${CERTDIR}/client.pem" "--server_key"	"${CERTDIR}/test-root-ca.crt"
 		)
@@ -502,6 +493,8 @@ IF (PAHO_WITH_SSL)
 			test3-2am-mutual-ssl-auth-multi-thread
 			test3-2b-mutual-ssl-broker-missing-client-cert
 			test3-2c-mutual-ssl-client-missing-broker-cert
+			test3-2e-ssl-with-ha
+			test3-2e-ws-ssl-with-ha
 			test3-3as-broker-auth-server-cert-in-client-store-single-thread
 			test3-3am-broker-auth-server-cert-in-client-store-multi-thread
 			test3-3b-broker-auth-client-missing-broker-cert
@@ -684,7 +677,7 @@ IF (PAHO_BUILD_STATIC)
 	
 	ADD_TEST(
 		NAME test45-7-pending-tokens-static
-		COMMAND test45-static "--test_no" "7" --verbose "--connection" ${MQTT_TEST_BROKER} 
+		COMMAND test45-static "--test_no" "7" "--connection" ${MQTT_TEST_BROKER} 
 	)
 	
 	ADD_TEST(
@@ -747,7 +740,7 @@ IF (PAHO_BUILD_SHARED)
 	
 	ADD_TEST(
 		NAME test45-7-pending-tokens
-		COMMAND test45 "--test_no" "7" --verbose "--connection" ${MQTT_TEST_BROKER} 
+		COMMAND test45 "--test_no" "7" "--connection" ${MQTT_TEST_BROKER} 
 	)
 	
 	ADD_TEST(
@@ -777,7 +770,7 @@ IF (PAHO_WITH_SSL)
 		
 		TARGET_LINK_LIBRARIES(
 			test5-static
-			paho-mqtt3as-static ${OPENSSL_LIB} ${OPENSSLCRYPTO_LIB}
+			paho-mqtt3as-static
 		)
 		
 		ADD_TEST(
@@ -880,6 +873,16 @@ IF (PAHO_WITH_SSL)
 			COMMAND test5-static "--test_no" "10" "--ws" "--hostname" ${MQTT_SSL_HOSTNAME} "--client_key"	 "${CERTDIR}/client.pem" "--server_key"	"${CERTDIR}/test-root-ca.crt"
 		)
 		
+		ADD_TEST(
+            NAME test5-2e-ssl-with-ha-static
+            COMMAND test5-static "--test_no" "14" "--hostname" ${MQTT_SSL_HOSTNAME} "--client_key"   "${CERTDIR}/client.pem" "--server_key" "${CERTDIR}/test-root-ca.crt"
+        )
+        
+        ADD_TEST(
+            NAME test5-2e-ws-ssl-with-ha-static
+            COMMAND test5-static "--test_no" "14" "--ws" "--hostname" ${MQTT_SSL_HOSTNAME} "--client_key"    "${CERTDIR}/client.pem" "--server_key" "${CERTDIR}/test-root-ca.crt"
+        )
+		
 		#ADD_TEST(
 		#	NAME test5-8-psk-ssl-auth-static
 		#	COMMAND test5-static "--test_no" "11" "--hostname" ${MQTT_SSL_HOSTNAME}
@@ -928,6 +931,8 @@ IF (PAHO_WITH_SSL)
 			test5-2c-ws-mutual-ssl-auth-client-missing-broker-cert-static
 			test5-2d-mutual-ssl-auth-client-missing-client-cert-static
 			test5-2d-ws-mutual-ssl-auth-client-missing-client-cert-static
+			test5-2e-ssl-with-ha-static
+			test5-2e-ws-ssl-with-ha-static
 			test5-3a-server-auth-server-cert-in-client-store-static
 			test5-3a-ws-server-auth-server-cert-in-client-store-static
 			test5-3b-server-auth-client-missing-broker-cert-static
@@ -1054,6 +1059,16 @@ IF (PAHO_WITH_SSL)
 			COMMAND test5 "--test_no" "10" "--ws" "--hostname" ${MQTT_SSL_HOSTNAME} "--client_key"	 "${CERTDIR}/client.pem" "--server_key"	"${CERTDIR}/test-root-ca.crt"
 		)
 		
+		ADD_TEST(
+            NAME test5-2e-ssl-with-ha
+            COMMAND test5 "--test_no" "14" "--hostname" ${MQTT_SSL_HOSTNAME} "--client_key"   "${CERTDIR}/client.pem" "--server_key" "${CERTDIR}/test-root-ca.crt"
+        )
+        
+        ADD_TEST(
+            NAME test5-2e-ws-ssl-with-ha
+            COMMAND test5 "--test_no" "14" "--ws" "--hostname" ${MQTT_SSL_HOSTNAME} "--client_key"    "${CERTDIR}/client.pem" "--server_key" "${CERTDIR}/test-root-ca.crt"
+        )
+		
 		#ADD_TEST(
 		#	NAME test5-8-psk-ssl-auth
 		#	COMMAND test5 "--test_no" "11" "--hostname" ${MQTT_SSL_HOSTNAME}
@@ -1101,6 +1116,8 @@ IF (PAHO_WITH_SSL)
 			test5-2c-ws-mutual-ssl-auth-client-missing-broker-cert
 			test5-2d-mutual-ssl-auth-client-missing-client-cert
 			test5-2d-ws-mutual-ssl-auth-client-missing-client-cert
+			test5-2e-ssl-with-ha
+			test5-2e-ws-ssl-with-ha
 			test5-3a-server-auth-server-cert-in-client-store
 			test5-3a-ws-server-auth-server-cert-in-client-store
 			test5-3b-server-auth-client-missing-broker-cert
@@ -1768,6 +1785,7 @@ IF (PAHO_BUILD_SHARED)
 	)
 ENDIF()
 
+IF (NOT PAHO_HIGH_PERFORMANCE)
 IF (PAHO_BUILD_STATIC)
 	ADD_EXECUTABLE(
 		test_issue373-static
@@ -1788,6 +1806,7 @@ IF (PAHO_BUILD_SHARED)
 		test_issue373
 		paho-mqtt3a
 	)
+ENDIF()
 ENDIF()
 
 
@@ -1833,4 +1852,49 @@ IF (PAHO_BUILD_SHARED)
 		test_sync_session_present-1-client_session_present_after_reconnect
 		PROPERTIES TIMEOUT 540
 	)
+ENDIF()
+
+IF (PAHO_BUILD_STATIC)
+    ADD_EXECUTABLE(
+        test_connect_destroy-static
+        test_connect_destroy.c
+    )
+
+   TARGET_LINK_LIBRARIES(
+        test_connect_destroy-static
+        paho-mqtt3c-static
+    )
+ 
+    ADD_TEST(
+            NAME test_connect_destroy-1-execute-destroy-during-connect-static
+            COMMAND "test_connect_destroy-static" "--test_no" "1" "--connection" ${MQTT_TEST_BROKER}
+    )
+    
+    SET_TESTS_PROPERTIES(
+            test_connect_destroy-1-execute-destroy-during-connect-static
+            PROPERTIES TIMEOUT 540
+    )
+ENDIF()
+
+
+IF (PAHO_BUILD_SHARED)
+    ADD_EXECUTABLE(
+    	test_connect_destroy
+    	test_connect_destroy.c
+    )
+    
+    TARGET_LINK_LIBRARIES(
+    	test_connect_destroy
+    	paho-mqtt3c
+    )
+    
+    ADD_TEST(
+            NAME test_connect_destroy-1-execute-destroy-during-connect
+            COMMAND "test_connect_destroy" "--test_no" "1" "--connection" ${MQTT_TEST_BROKER}
+    )
+    
+    SET_TESTS_PROPERTIES(
+            test_connect_destroy-1-execute-destroy-during-connect
+            PROPERTIES TIMEOUT 540
+    )
 ENDIF()

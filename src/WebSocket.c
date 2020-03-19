@@ -95,8 +95,6 @@
 #include <stdlib.h>
 #include <time.h>
 
-#include "Heap.h"
-
 /** @brief raw uuid type */
 typedef unsigned char uuid_t[16];
 
@@ -138,6 +136,8 @@ void uuid_unparse( uuid_t uu, char *out )
 }
 #endif /* else if defined(LIBUUID) */
 #endif /* if !(defined(_WIN32) || defined(_WIN64)) */
+
+#include "Heap.h"
 
 /** raw websocket frame data */
 struct ws_frame
@@ -474,7 +474,7 @@ void WebSocket_close(networkHandles *net, int status_code, const char *reason)
 		char *buf0;
 		size_t buf0len = sizeof(uint16_t);
 		uint16_t status_code_be;
-		const int mask_data = 0;
+		const int mask_data = 1; /* all frames from client must be masked */
 
 		if ( status_code < WebSocket_CLOSE_NORMAL ||
 			status_code > WebSocket_CLOSE_TLS_FAIL )
@@ -593,7 +593,6 @@ exit:
 char *WebSocket_getdata(networkHandles *net, size_t bytes, size_t* actual_len)
 {
 	char *rv = NULL;
-	int rc = 0;
 
 	FUNC_ENTRY;
 	if ( net->websocket )
@@ -672,8 +671,7 @@ char *WebSocket_getdata(networkHandles *net, size_t bytes, size_t* actual_len)
 		rv = Socket_getdata(net->socket, bytes, actual_len);
 
 exit:
-	rc = rv != NULL;
-	FUNC_EXIT_RC(rc);
+	FUNC_EXIT_RC(rv);
 	return rv;
 }
 
@@ -693,7 +691,7 @@ void WebSocket_rewindData( void )
  */
 char *WebSocket_getRawSocketData(networkHandles *net, size_t bytes, size_t* actual_len)
 {
-	char *rv;
+	char *rv = NULL;
 
 	size_t bytes_requested = bytes;
 
@@ -807,11 +805,10 @@ void WebSocket_pong(networkHandles *net, char *app_data, size_t app_data_len)
 		char *buf0 = NULL;
 		size_t buf0len = 0;
 		int freeData = 0;
-		const int mask_data = 0;
+		const int mask_data = 1; /* all frames from client must be masked */
 
-		WebSocket_buildFrame( net, WebSocket_OP_PONG, 1,
-			&buf0, &buf0len, mask_data, &app_data,
-				&app_data_len);
+		WebSocket_buildFrame( net, WebSocket_OP_PONG, mask_data,
+			&buf0, &buf0len, 1, &app_data, &app_data_len);
 
 		Log(TRACE_PROTOCOL, 1, "Sending WebSocket PONG" );
 
@@ -829,7 +826,6 @@ void WebSocket_pong(networkHandles *net, char *app_data, size_t app_data_len)
 		/* clean up memory */
 		free( buf0 );
 	}
-exit:
 	FUNC_EXIT;
 }
 
@@ -1212,7 +1208,15 @@ int WebSocket_upgrade( networkHandles *net )
 		{
 			const char *p;
 
-			read_buf = WebSocket_getRawSocketData( net, 500u, &rcv );
+			read_buf = WebSocket_getRawSocketData(net, 1024u, &rcv );
+
+			/* Did we read the whole response? */
+			if (read_buf && rcv > 4 && memcmp(&read_buf[rcv-4], "\r\n\r\n", 4) != 0)
+			{
+				Log(TRACE_PROTOCOL, -1, "WebSocket HTTP upgrade response read not complete %d", rcv);
+				rc = SOCKET_ERROR;
+				goto exit;
+			}
 
 			/* check for upgrade */
 			p = WebSocket_strcasefind(

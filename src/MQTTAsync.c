@@ -116,28 +116,6 @@ static sem_type send_sem = NULL;
 extern mutex_type stack_mutex;
 extern mutex_type heap_mutex;
 extern mutex_type log_mutex;
-BOOL APIENTRY DllMain(HANDLE hModule,
-					  DWORD  ul_reason_for_call,
-					  LPVOID lpReserved)
-{
-	switch (ul_reason_for_call)
-	{
-		case DLL_PROCESS_ATTACH:
-			Log(TRACE_MAX, -1, "DLL process attach");
-			MQTTAsync_init();
-			break;
-		case DLL_THREAD_ATTACH:
-			Log(TRACE_MAX, -1, "DLL thread attach");
-			break;
-		case DLL_THREAD_DETACH:
-			Log(TRACE_MAX, -1, "DLL thread detach");
-			break;
-		case DLL_PROCESS_DETACH:
-			Log(TRACE_MAX, -1, "DLL process detach");
-		break;
-	}
-	return TRUE;
-}
 
 void MQTTAsync_init(void)
 {
@@ -161,6 +139,73 @@ void MQTTAsync_init(void)
 		Log(TRACE_MAX, -1, "Library already initialized");
 	}
 }
+
+#if defined(PAHO_BUILD_STATIC)
+// Global variable for one-time initialization structure
+INIT_ONCE g_InitOnce = INIT_ONCE_STATIC_INIT; // Static initialization
+
+// Initialization callback function
+BOOL CALLBACK InitHandleFunction (
+    PINIT_ONCE InitOnce,
+    PVOID Parameter,
+    PVOID *lpContext);
+
+// Returns a handle to an event object that is created only once
+HANDLE OpenEventHandleSync()
+{
+  PVOID lpContext;
+  BOOL  bStatus;
+
+  // Execute the initialization callback function
+  bStatus = InitOnceExecuteOnce(&g_InitOnce,          // One-time initialization structure
+                                InitHandleFunction,   // Pointer to initialization callback function
+                                NULL,                 // Optional parameter to callback function (not used)
+                                &lpContext);          // Receives pointer to event object stored in g_InitOnce
+
+  // InitOnceExecuteOnce function succeeded. Return event object.
+  if (bStatus)
+  {
+    return (HANDLE)lpContext;
+  }
+  else
+  {
+    return (INVALID_HANDLE_VALUE);
+  }
+}
+
+// Initialization callback function that creates the event object
+BOOL CALLBACK InitHandleFunction (
+    PINIT_ONCE InitOnce,        // Pointer to one-time initialization structure
+    PVOID Parameter,            // Optional parameter passed by InitOnceExecuteOnce
+    PVOID *lpContext)           // Receives pointer to event object
+{
+	MQTTAsync_init();
+    return TRUE;
+}
+#else
+BOOL APIENTRY DllMain(HANDLE hModule,
+					  DWORD  ul_reason_for_call,
+					  LPVOID lpReserved)
+{
+	switch (ul_reason_for_call)
+	{
+		case DLL_PROCESS_ATTACH:
+			Log(TRACE_MAX, -1, "DLL process attach");
+			MQTTAsync_init();
+			break;
+		case DLL_THREAD_ATTACH:
+			Log(TRACE_MAX, -1, "DLL thread attach");
+			break;
+		case DLL_THREAD_DETACH:
+			Log(TRACE_MAX, -1, "DLL thread detach");
+			break;
+		case DLL_PROCESS_DETACH:
+			Log(TRACE_MAX, -1, "DLL process detach");
+		break;
+	}
+	return TRUE;
+}
+#endif
 
 
 #else
@@ -561,6 +606,9 @@ int MQTTAsync_createWithOptions(MQTTAsync* handle, const char* serverURI, const 
 	int rc = 0;
 	MQTTAsyncs *m = NULL;
 
+#if (defined(_WIN32) || defined(_WIN64)) && defined(PAHO_BUILD_STATIC)
+	OpenEventHandleSync(); /* intializes mutexes once.  Must come before FUNC_ENTRY */
+#endif
 	FUNC_ENTRY;
 	MQTTAsync_lock_mutex(mqttasync_mutex);
 
@@ -600,7 +648,7 @@ int MQTTAsync_createWithOptions(MQTTAsync* handle, const char* serverURI, const 
 
 	if (!global_initialized)
 	{
-		#if defined(HEAP_H)
+		#if !defined(NO_HEAP_TRACKING)
 			Heap_initialize();
 		#endif
 		Log_initialize((Log_nameValue*)MQTTAsync_getVersionInfo());
@@ -704,7 +752,7 @@ static void MQTTAsync_terminate(void)
 		ListFree(commands);
 		handles = NULL;
 		WebSocket_terminate();
-		#if defined(HEAP_H)
+		#if !defined(NO_HEAP_TRACKING)
 			Heap_terminate();
 		#endif
 		Log_terminate();
@@ -1293,7 +1341,8 @@ static void MQTTAsync_freeCommand1(MQTTAsync_queuedCommand *command)
 		if (command->command.details.pub.destinationName)
 			free(command->command.details.pub.destinationName);
 		command->command.details.pub.destinationName = NULL;
-		free(command->command.details.pub.payload);
+		if (command->command.details.pub.payload)
+			free(command->command.details.pub.payload);
 		command->command.details.pub.payload = NULL;
 	}
 	MQTTProperties_free(&command->command.properties);
@@ -1654,7 +1703,10 @@ static int MQTTAsync_processCommand(void)
 			}
 		}
 		else
+		{
+			command->command.details.pub.payload = NULL; /* this will be freed by the protocol code */
 			command->command.details.pub.destinationName = NULL; /* this will be freed by the protocol code */
+		}
 		free(p); /* should this be done if the write isn't complete? */
 	}
 	else if (command->command.type == DISCONNECT)
@@ -2495,7 +2547,9 @@ static thread_return_type WINAPI MQTTAsync_receiveThread(void* n)
 
 static void MQTTAsync_stop(void)
 {
+#if !defined(NOSTACKTRACE)
 	int rc = 0;
+#endif
 
 	FUNC_ENTRY;
 	if (sendThread_state != STOPPED || receiveThread_state != STOPPED)
@@ -2526,7 +2580,9 @@ static void MQTTAsync_stop(void)
 				MQTTAsync_sleep(100L);
 				MQTTAsync_lock_mutex(mqttasync_mutex);
 			}
+#if !defined(NOSTACKTRACE)
 			rc = 1;
+#endif
 			tostop = 0;
 		}
 	}
@@ -2768,7 +2824,7 @@ static int MQTTAsync_deliverMessage(MQTTAsyncs* m, char* topicName, size_t topic
 }
 
 
-void Protocol_processPublication(Publish* publish, Clients* client)
+void Protocol_processPublication(Publish* publish, Clients* client, int allocatePayload)
 {
 	MQTTAsync_message* mm = NULL;
 	MQTTAsync_message initialized = MQTTAsync_message_initializer;
@@ -2778,17 +2834,12 @@ void Protocol_processPublication(Publish* publish, Clients* client)
 	mm = malloc(sizeof(MQTTAsync_message));
 	memcpy(mm, &initialized, sizeof(MQTTAsync_message));
 
-	/* If the message is QoS 2, then we have already stored the incoming payload
-	 * in an allocated buffer, so we don't need to copy again.
-	 */
-	if (publish->header.bits.qos == 2)
-		mm->payload = publish->payload;
-	else
+	if (allocatePayload)
 	{
 		mm->payload = malloc(publish->payloadlen);
 		memcpy(mm->payload, publish->payload, publish->payloadlen);
-	}
-
+	} else
+		mm->payload = publish->payload;
 	mm->payloadlen = publish->payloadlen;
 	mm->qos = publish->header.bits.qos;
 	mm->retained = publish->header.bits.retain;
@@ -3647,8 +3698,26 @@ static void MQTTAsync_retry(void)
 static int MQTTAsync_connecting(MQTTAsyncs* m)
 {
 	int rc = -1;
+	char* serverURI = m->serverURI;
 
 	FUNC_ENTRY;
+	if (m->serverURIcount > 0)
+	{
+		serverURI = m->serverURIs[m->connect.details.conn.currentURI];
+
+		/* skip URI scheme */
+		if (strncmp(URI_TCP, serverURI, strlen(URI_TCP)) == 0)
+			serverURI += strlen(URI_TCP);
+		else if (strncmp(URI_WS, serverURI, strlen(URI_WS)) == 0)
+			serverURI += strlen(URI_WS);
+#if defined(OPENSSL)
+		else if (strncmp(URI_SSL, serverURI, strlen(URI_SSL)) == 0)
+			serverURI += strlen(URI_SSL);
+		else if (strncmp(URI_WSS, serverURI, strlen(URI_WSS)) == 0)
+			serverURI += strlen(URI_WSS);
+#endif
+	}
+
 	if (m->c->connect_state == TCP_IN_PROGRESS) /* TCP connect started - check for completion */
 	{
 		int error;
@@ -3671,13 +3740,13 @@ static int MQTTAsync_connecting(MQTTAsyncs* m)
 
 			if (m->websocket && m->c->net.https_proxy) {
 				m->c->connect_state = PROXY_CONNECT_IN_PROGRESS;
-				if ((rc = WebSocket_proxy_connect( &m->c->net, 1, m->serverURI)) == SOCKET_ERROR )
+				if ((rc = WebSocket_proxy_connect( &m->c->net, 1, serverURI)) == SOCKET_ERROR )
 					goto exit;
 			}
 
-			hostname_len = MQTTProtocol_addressPort(m->serverURI, &port, NULL);
+			hostname_len = MQTTProtocol_addressPort(serverURI, &port, NULL);
 			setSocketForSSLrc = SSLSocket_setSocketForSSL(&m->c->net, m->c->sslopts,
-				m->serverURI, hostname_len);
+					serverURI, hostname_len);
 
 			if (setSocketForSSLrc != MQTTASYNC_SUCCESS)
 			{
@@ -3685,9 +3754,9 @@ static int MQTTAsync_connecting(MQTTAsyncs* m)
 					if ((rc = SSL_set_session(m->c->net.ssl, m->c->session)) != 1)
 						Log(TRACE_MIN, -1, "Failed to set SSL session with stored data, non critical");
 				rc = m->c->sslopts->struct_version >= 3 ?
-					SSLSocket_connect(m->c->net.ssl, m->c->net.socket, m->serverURI,
+					SSLSocket_connect(m->c->net.ssl, m->c->net.socket, serverURI,
 						m->c->sslopts->verify, m->c->sslopts->ssl_error_cb, m->c->sslopts->ssl_error_context) :
-					SSLSocket_connect(m->c->net.ssl, m->c->net.socket, m->serverURI,
+					SSLSocket_connect(m->c->net.ssl, m->c->net.socket, serverURI,
 						m->c->sslopts->verify, NULL, NULL);
 				if (rc == TCPSOCKET_INTERRUPTED)
 				{
@@ -3704,7 +3773,7 @@ static int MQTTAsync_connecting(MQTTAsyncs* m)
 					if ( m->websocket )
 					{
 						m->c->connect_state = WEBSOCKET_IN_PROGRESS;
-						if ((rc = WebSocket_connect(&m->c->net, m->serverURI)) == SOCKET_ERROR )
+						if ((rc = WebSocket_connect(&m->c->net, serverURI)) == SOCKET_ERROR )
 							goto exit;
 					}
 					else
@@ -3735,12 +3804,12 @@ static int MQTTAsync_connecting(MQTTAsyncs* m)
 			{
 				if (m->c->net.http_proxy) {
 					m->c->connect_state = PROXY_CONNECT_IN_PROGRESS;
-					if ((rc = WebSocket_proxy_connect( &m->c->net, 0, m->serverURI)) == SOCKET_ERROR )
+					if ((rc = WebSocket_proxy_connect( &m->c->net, 0, serverURI)) == SOCKET_ERROR )
 						goto exit;
 				}
 
 				m->c->connect_state = WEBSOCKET_IN_PROGRESS;
-				if ((rc = WebSocket_connect(&m->c->net, m->serverURI)) == SOCKET_ERROR )
+				if ((rc = WebSocket_connect(&m->c->net, serverURI)) == SOCKET_ERROR )
 					goto exit;
 			}
 			else
@@ -3758,9 +3827,9 @@ static int MQTTAsync_connecting(MQTTAsyncs* m)
 	else if (m->c->connect_state == SSL_IN_PROGRESS) /* SSL connect sent - wait for completion */
 	{
 		rc = m->c->sslopts->struct_version >= 3 ?
-			SSLSocket_connect(m->c->net.ssl, m->c->net.socket, m->serverURI,
+			SSLSocket_connect(m->c->net.ssl, m->c->net.socket, serverURI,
 				m->c->sslopts->verify, m->c->sslopts->ssl_error_cb, m->c->sslopts->ssl_error_context) :
-			SSLSocket_connect(m->c->net.ssl, m->c->net.socket, m->serverURI,
+			SSLSocket_connect(m->c->net.ssl, m->c->net.socket, serverURI,
 				m->c->sslopts->verify, NULL, NULL);
 		if (rc != 1)
 			goto exit;
@@ -3771,7 +3840,7 @@ static int MQTTAsync_connecting(MQTTAsyncs* m)
 		if ( m->websocket )
 		{
 			m->c->connect_state = WEBSOCKET_IN_PROGRESS;
-			if ((rc = WebSocket_connect(&m->c->net, m->serverURI)) == SOCKET_ERROR )
+			if ((rc = WebSocket_connect(&m->c->net, serverURI)) == SOCKET_ERROR )
 				goto exit;
 		}
 		else

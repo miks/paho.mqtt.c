@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2009, 2013 IBM Corp.
+ * Copyright (c) 2009, 2020 IBM Corp.
  *
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License v1.0
@@ -23,12 +23,16 @@
 #define NO_HEAP_TRACKING 1
 #endif
 
+#define PAHO_MEMORY_ERROR -99
+
 #include "ExportDeclarations.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 
 #if !defined(NO_HEAP_TRACKING)
+
+#if !defined(TREE_C)
 /**
  * redefines malloc to use "mymalloc" so that heap allocation can be tracked
  * @param x the size of the item to be allocated
@@ -79,6 +83,8 @@ void* Heap_findItem(void* p);
 void Heap_unlink(char* file, int line, void* p);
 #ifdef __cplusplus
      }
+#endif
+
 #endif
 
 #endif
